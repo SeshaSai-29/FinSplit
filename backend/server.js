@@ -85,11 +85,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`=============================================`);
-  console.log(`  Personal Finance Tracker Backend Running   `);
-  console.log(`  Port: ${PORT}                               `);
-  console.log(`  Mode: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`  Database: MongoDB / Mongoose               `);
-  console.log(`  Syntax: Native ES Modules (import/export)  `);
-  console.log(`=============================================`);
+  console.log(`Server running on port ${PORT}`);
 });

@@ -116,7 +116,6 @@ router.get('/google/callback', async (req, res) => {
         authProvider: 'google',
         groupIds: []
       });
-      console.log('Created new Google OAuth user:', user.email);
     } else {
       let shouldSave = false;
       if (!user.googleId) {
@@ -130,7 +129,6 @@ router.get('/google/callback', async (req, res) => {
       if (shouldSave) {
         await user.save();
       }
-      console.log('Logged in existing user with Google OAuth:', user.email);
     }
 
     // 4. Generate JWT token with 10-day validity
