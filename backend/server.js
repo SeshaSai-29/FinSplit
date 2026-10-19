@@ -8,6 +8,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/auth.js';
 import groupRoutes from './routes/groups.js';
 import transactionRoutes from './routes/transactions.js';
+import userRoutes from './routes/users.js';
 
 // Connect to MongoDB
 connectDB();
@@ -17,21 +18,50 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Middleware
+// Allowed origins for CORS (supports local development and Vercel production/preview deploys)
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
+  'http://localhost:3000'
+].filter(Boolean);
+
 app.use(cors({
-  origin: 'http://localhost:5173', // Vite standard development port
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    const isExplicitlyAllowed = allowedOrigins.some(allowed => 
+      origin === allowed || origin.replace(/\/+$/, '') === allowed.replace(/\/+$/, '')
+    );
+
+    // Allow configured origins or any Vercel domain (*.vercel.app)
+    if (isExplicitlyAllowed || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+  },
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static assets / logs directory if needed (e.g. for uploads or UI)
-app.use('/data', express.static(path.join(__dirname, 'data')));
+// Root route (for service check)
+app.get('/', (req, res) => {
+  res.json({
+    name: 'FinSplit API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: '/api/health'
+  });
+});
 
 // Mount API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/users', userRoutes);
 
 // Root route (for health checking)
 app.get('/api/health', (req, res) => {

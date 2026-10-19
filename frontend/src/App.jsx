@@ -5,17 +5,24 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Home from './components/Home';
 import PersonalDashboard from './pages/PersonalDashboard';
+import Analytics from './pages/Analytics';
 import GroupDashboard from './pages/GroupDashboard';
 import Groups from './components/Groups';
 import Navbar from './components/Navbar';
+import Profile from './pages/Profile';
+import Features from './pages/Features';
+import OAuthCallback from './pages/OAuthCallback';
 import './App.css';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Sync token validation on mount
+  // Initialize theme and sync token validation on mount
   useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
       const cachedUser = localStorage.getItem('user');
@@ -71,11 +78,11 @@ export default function App() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: '#080911',
+        backgroundColor: 'var(--bg-deep)',
         gap: '1rem'
       }}>
-        <Loader2 size={48} style={{ color: '#06b6d4', animation: 'spin 1s linear infinite' }} />
-        <p style={{ color: '#9ca3af', fontFamily: 'sans-serif', fontSize: '0.95rem' }}>Loading FinSplit Workspace...</p>
+        <Loader2 size={48} style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
+        <p style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-heading)', fontSize: '0.95rem' }}>Loading FinSplit Workspace...</p>
         <style>{`
           @keyframes spin {
             from { transform: rotate(0deg); }
@@ -89,7 +96,7 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        {/* PUBLIC ROUTES */}
+        {/* PUBLIC & AUTH ROUTES */}
         <Route 
           path="/login" 
           element={!user ? <Login onLoginSuccess={setUser} /> : <Navigate to="/home" replace />} 
@@ -97,6 +104,25 @@ export default function App() {
         <Route 
           path="/register" 
           element={!user ? <Register onRegisterSuccess={setUser} /> : <Navigate to="/home" replace />} 
+        />
+        <Route 
+          path="/auth/callback" 
+          element={<OAuthCallback onLoginSuccess={setUser} />} 
+        />
+
+        {/* FEATURES & EXPLANATION PAGE */}
+        <Route 
+          path="/features" 
+          element={
+            user ? (
+              <>
+                <Navbar user={user} onLogout={handleLogout} />
+                <Features user={user} />
+              </>
+            ) : (
+              <Features user={null} />
+            )
+          } 
         />
 
         {/* PROTECTED ROUTES */}
@@ -143,7 +169,48 @@ export default function App() {
         />
 
         <Route 
+          path="/analytics" 
+          element={
+            user ? (
+              <>
+                <Navbar user={user} onLogout={handleLogout} />
+                <Analytics user={user} />
+              </>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          } 
+        />
+
+        <Route 
+          path="/profile" 
+          element={
+            user ? (
+              <>
+                <Navbar user={user} onLogout={handleLogout} />
+                <Profile user={user} onUserUpdate={setUser} />
+              </>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          } 
+        />
+
+        <Route 
           path="/group-dashboard" 
+          element={
+            user ? (
+              <>
+                <Navbar user={user} onLogout={handleLogout} />
+                <GroupDashboard user={user} onUserUpdate={setUser} />
+              </>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          } 
+        />
+        <Route 
+          path="/group-dashboard/:groupId" 
           element={
             user ? (
               <>

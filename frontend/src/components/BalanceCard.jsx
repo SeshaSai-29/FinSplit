@@ -1,7 +1,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 
-export default function BalanceCard({ transactions }) {
+export default function BalanceCard({ transactions, filterType, onFilterChange }) {
   const totalIncome = transactions
     .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0);
@@ -13,15 +13,18 @@ export default function BalanceCard({ transactions }) {
   const netBalance = totalIncome - totalExpenses;
 
   const formatCurrency = (value) =>
-    value.toLocaleString('en-US', {
+    Math.abs(value).toLocaleString('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       minimumFractionDigits: 2,
     });
 
   return (
     <div className="balance-cards-row">
-      <div className="balance-card balance-card--income">
+      <div 
+        className={`balance-card balance-card--income ${filterType === 'income' ? 'balance-card--active' : ''}`}
+        onClick={() => onFilterChange('income')}
+      >
         <div className="balance-card__header">
           <span className="balance-card__label">Total Income</span>
           <div className="balance-card__icon balance-card__icon--income">
@@ -37,7 +40,10 @@ export default function BalanceCard({ transactions }) {
         </p>
       </div>
 
-      <div className="balance-card balance-card--expense">
+      <div 
+        className={`balance-card balance-card--expense ${filterType === 'expense' ? 'balance-card--active' : ''}`}
+        onClick={() => onFilterChange('expense')}
+      >
         <div className="balance-card__header">
           <span className="balance-card__label">Total Expenses</span>
           <div className="balance-card__icon balance-card__icon--expense">
@@ -53,7 +59,10 @@ export default function BalanceCard({ transactions }) {
         </p>
       </div>
 
-      <div className="balance-card balance-card--net">
+      <div 
+        className={`balance-card balance-card--net ${filterType === 'all' ? 'balance-card--active' : ''}`}
+        onClick={() => onFilterChange('all')}
+      >
         <div className="balance-card__header">
           <span className="balance-card__label">Net Balance</span>
           <div className="balance-card__icon balance-card__icon--net">

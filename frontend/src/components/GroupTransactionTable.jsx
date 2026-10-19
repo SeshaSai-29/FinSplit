@@ -1,7 +1,7 @@
 import React from 'react';
 import { Receipt, Users } from 'lucide-react';
 
-export default function GroupTransactionTable({ transactions }) {
+export default function GroupTransactionTable({ transactions, onTransactionClick }) {
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', {
@@ -12,9 +12,9 @@ export default function GroupTransactionTable({ transactions }) {
   };
 
   const formatCurrency = (value) =>
-    value.toLocaleString('en-US', {
+    value.toLocaleString('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       minimumFractionDigits: 2,
     });
 
@@ -30,7 +30,7 @@ export default function GroupTransactionTable({ transactions }) {
     return (
       <div className="glass-card transaction-table-card">
         <h2 className="transaction-table__title">
-          <Users size={22} style={{ color: '#22d3ee' }} />
+          <Users size={22} style={{ color: 'var(--brand-primary)' }} />
           <span>Shared Expenses</span>
         </h2>
         <div className="empty-state">
@@ -47,7 +47,7 @@ export default function GroupTransactionTable({ transactions }) {
   return (
     <div className="glass-card transaction-table-card">
       <h2 className="transaction-table__title">
-        <Users size={22} style={{ color: '#22d3ee' }} />
+        <Users size={22} style={{ color: 'var(--brand-primary)' }} />
         <span>Shared Expenses</span>
         <span className="transaction-count">{transactions.length}</span>
       </h2>
@@ -65,7 +65,7 @@ export default function GroupTransactionTable({ transactions }) {
           </thead>
           <tbody>
             {transactions.map((txn) => (
-              <tr key={txn._id} className="transaction-row">
+              <tr key={txn._id} className="transaction-row" onClick={() => onTransactionClick && onTransactionClick(txn)} style={{ cursor: 'pointer' }}>
                 <td className="txn-date">{formatDate(txn.createdAt)}</td>
                 <td>
                   <span className="paid-by-badge">

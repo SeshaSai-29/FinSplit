@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, AlertCircle, Users, ChevronDown, DollarSign, PlusCircle, X } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Loader2, AlertCircle, Users, ChevronDown, IndianRupee, PlusCircle, X, CheckCircle2, Pencil } from 'lucide-react';
 import GroupTransactionTable from '../components/GroupTransactionTable';
 import MembersDisplay from '../components/MembersDisplay';
 import OwingLogicCard from '../components/OwingLogicCard';
 import TransactionForm from '../components/TransactionForm';
+import TransactionDetailModal from '../components/TransactionDetailModal';
+import ManageGroupBudgetModal from '../components/ManageGroupBudgetModal';
 
 export default function GroupDashboard({ user, onUserUpdate }) {
+  const { groupId: routeGroupId } = useParams();
+  const navigate = useNavigate();
+
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [transactions, setTransactions] = useState([]);
@@ -14,7 +20,10 @@ export default function GroupDashboard({ user, onUserUpdate }) {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [activeTransaction, setActiveTransaction] = useState(null);
 
   const fetchGroups = async () => {
     try {
@@ -40,6 +49,38 @@ export default function GroupDashboard({ user, onUserUpdate }) {
   useEffect(() => {
     fetchGroups();
   }, [user]);
+
+  // Sync selectedGroupId with URL parameter / localStorage
+  useEffect(() => {
+    if (groupsLoading) return;
+
+    const candidateId = routeGroupId || localStorage.getItem('activeGroupId') || '';
+
+    if (candidateId) {
+      const isValid = groups.some((g) => g.code === candidateId);
+      if (isValid) {
+        if (selectedGroupId !== candidateId) {
+          setSelectedGroupId(candidateId);
+        }
+        localStorage.setItem('activeGroupId', candidateId);
+        if (routeGroupId !== candidateId) {
+          navigate(`/group-dashboard/${candidateId}`, { replace: true });
+        }
+      } else {
+        localStorage.removeItem('activeGroupId');
+        if (selectedGroupId) {
+          setSelectedGroupId('');
+        }
+        if (routeGroupId) {
+          navigate('/group-dashboard', { replace: true });
+        }
+      }
+    } else {
+      if (selectedGroupId) {
+        setSelectedGroupId('');
+      }
+    }
+  }, [groupsLoading, groups, routeGroupId]);
 
   // Fetch transactions and members when a group is selected
   useEffect(() => {
@@ -115,68 +156,127 @@ export default function GroupDashboard({ user, onUserUpdate }) {
   };
 
   const handleGroupDeleted = async () => {
+    try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
     setSelectedGroupId('');
+    localStorage.removeItem('activeGroupId');
+    navigate('/group-dashboard');
     await fetchGroups();
     await syncProfile();
   };
 
   const handleGroupLeft = async () => {
+    try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
     setSelectedGroupId('');
+    localStorage.removeItem('activeGroupId');
+    navigate('/group-dashboard');
     await fetchGroups();
     await syncProfile();
   };
 
   const handleGroupRenamed = async () => {
+    try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
     await fetchGroups();
   };
 
+  const handleBudgetUpdated = (updatedGroup, message) => {
+    try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
+    setGroups((prev) => prev.map((g) => (g.code === updatedGroup.code ? updatedGroup : g)));
+    setSuccess(message || 'Group budget updated successfully!');
+    setTimeout(() => setSuccess(''), 4000);
+    fetchGroups();
+  };
+
   const handleGroupChange = (e) => {
-    setSelectedGroupId(e.target.value);
+    const newCode = e.target.value;
+    setSelectedGroupId(newCode);
     setError('');
     setShowExpenseModal(false);
+    setShowBudgetModal(false);
+
+    if (newCode) {
+      localStorage.setItem('activeGroupId', newCode);
+      navigate(`/group-dashboard/${newCode}`);
+    } else {
+      localStorage.removeItem('activeGroupId');
+      navigate('/group-dashboard');
+    }
   };
 
   const handleGroupTransactionAdded = (newTxn) => {
-    setTransactions((prev) => [newTxn, ...prev]);
+    try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
+    const populatedTxn = {
+      ...newTxn,
+      userId: (newTxn.userId && typeof newTxn.userId === 'object' && newTxn.userId.name)
+        ? newTxn.userId
+        : { _id: user?.id || user?._id, name: user?.name || 'You', email: user?.email || '' }
+    };
+    setTransactions((prev) => [populatedTxn, ...prev]);
     setShowExpenseModal(false);
+    fetchGroups();
+  };
+
+  const handleTransactionDeleted = async (id) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to delete transaction');
+      }
+
+      try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
+      setTransactions((prev) => prev.filter((t) => t._id !== id));
+      await syncProfile();
+      await fetchGroups();
+      setSuccess('Transaction deleted successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert(err.message);
+    }
   };
 
   // Close modal on Escape key
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') setShowExpenseModal(false);
+      if (e.key === 'Escape') {
+        setShowExpenseModal(false);
+        setShowBudgetModal(false);
+      }
     };
-    if (showExpenseModal) {
+    if (showExpenseModal || showBudgetModal) {
       window.addEventListener('keydown', handleKeyDown);
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showExpenseModal]);
+  }, [showExpenseModal, showBudgetModal]);
 
   const userGroupIds = user?.groupIds || [];
 
-  // Compute total expenses for the budget bar (only count type === expense)
+  // Compute total expenses and income for the group
   const totalExpenses = transactions
     .filter((txn) => txn.type === 'expense')
     .reduce((sum, txn) => sum + txn.amount, 0);
 
   const selectedGroup = groups.find((g) => g.code === selectedGroupId);
+  const currentUserId = user?.id || user?._id;
+  const isOwner = Boolean(selectedGroup && (selectedGroup.createdBy === currentUserId || selectedGroup.createdBy === user?.id));
   const groupOwner = members.find((m) => m._id === selectedGroup?.createdBy || m.id === selectedGroup?.createdBy);
   const budgetLimit = selectedGroup?.budget || 0;
-  const percentageUsed = budgetLimit > 0 ? Math.min(100, (totalExpenses / budgetLimit) * 100) : 0;
-
-  // Choose progress bar color based on percentage
-  let progressBarColor = '#10b981'; // Green
-  if (percentageUsed > 90) {
-    progressBarColor = '#ef4444'; // Red
-  } else if (percentageUsed > 70) {
-    progressBarColor = '#f59e0b'; // Amber
-  }
+  const availableMoney = budgetLimit > 0 ? Math.max(0, budgetLimit - totalExpenses) : 0;
+  const isOverBudget = budgetLimit > 0 && totalExpenses > budgetLimit;
+  const overAmount = isOverBudget ? totalExpenses - budgetLimit : 0;
 
   return (
     <div className="page-container">
       <div className="page-header">
         <h1 className="page-title">
-          <Users size={32} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.5rem', color: '#06b6d4' }} />
+          <Users size={32} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.5rem', color: 'var(--brand-primary)' }} />
           Group Dashboard
         </h1>
         <p className="page-subtitle">
@@ -226,7 +326,7 @@ export default function GroupDashboard({ user, onUserUpdate }) {
               {selectedGroup && (
                 <div className="group-owner-info" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', gap: '0.35rem', alignItems: 'center', paddingLeft: '0.25rem', marginTop: '0.25rem' }}>
                   <span>Group Owner:</span>
-                  <span style={{ color: '#06b6d4', fontWeight: 600 }}>
+                  <span style={{ color: 'var(--brand-primary)', fontWeight: 600 }}>
                     {groupOwner ? `${groupOwner.name} (${groupOwner.email})` : 'Loading owner details...'}
                   </span>
                 </div>
@@ -234,12 +334,30 @@ export default function GroupDashboard({ user, onUserUpdate }) {
             </div>
 
             {/* Quick stats when a group is selected */}
-            {selectedGroupId && !loading && transactions.length > 0 && (
+            {selectedGroupId && !loading && (
               <div className="group-stats-row">
+                <div className="group-stat">
+                  <span className="group-stat__label">Total Budget</span>
+                  <span className="group-stat__value" style={{ color: 'var(--brand-primary)', fontWeight: 700 }}>
+                    {budgetLimit > 0
+                      ? budgetLimit.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+                      : '₹0.00'}
+                  </span>
+                </div>
+                <div className="group-stat">
+                  <span className="group-stat__label">Available to Use</span>
+                  <span className="group-stat__value" style={{ color: budgetLimit <= 0 ? 'var(--text-primary)' : isOverBudget ? '#EF4444' : '#22C55E', fontWeight: 700 }}>
+                    {budgetLimit <= 0
+                      ? '₹0.00'
+                      : isOverBudget
+                        ? `-₹${overAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                        : availableMoney.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                  </span>
+                </div>
                 <div className="group-stat">
                   <span className="group-stat__label">Total Expenses</span>
                   <span className="group-stat__value amount-expense">
-                    {totalExpenses.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    {totalExpenses.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
                   </span>
                 </div>
                 <div className="group-stat">
@@ -262,10 +380,18 @@ export default function GroupDashboard({ user, onUserUpdate }) {
             </div>
           )}
 
+          {/* Success State */}
+          {success && (
+            <div className="alert alert-success" style={{ marginTop: '1.5rem' }}>
+              <CheckCircle2 size={18} />
+              <span>{success}</span>
+            </div>
+          )}
+
           {/* Loading State */}
           {loading && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem 0', gap: '1rem' }}>
-              <Loader2 size={40} style={{ color: '#06b6d4', animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={40} style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
               <p style={{ color: 'var(--text-secondary)' }}>Loading group details...</p>
               <style>{`
                 @keyframes spin {
@@ -298,50 +424,14 @@ export default function GroupDashboard({ user, onUserUpdate }) {
           {/* Group Content Dashboard Layout */}
           {selectedGroupId && !loading && (
             <>
-              {/* Top Card: Budget Progress Bar */}
-              <div className="glass-card budget-progress-card">
-                <div className="budget-progress-header">
-                  <div className="budget-progress-title">
-                    <DollarSign size={18} style={{ color: '#10b981' }} />
-                    <span>Total Group Budget</span>
-                  </div>
-                  <div className="budget-progress-values">
-                    {totalExpenses.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.9rem' }}>
-                      {' '}
-                      / {budgetLimit > 0 ? budgetLimit.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : '$0.00 (No budget)'}
-                    </span>
-                  </div>
-                </div>
-                {budgetLimit > 0 ? (
-                  <>
-                    <div className="budget-progress-bar-track">
-                      <div
-                        className="budget-progress-bar-fill"
-                        style={{
-                          width: `${percentageUsed}%`,
-                          backgroundColor: progressBarColor,
-                          boxShadow: `0 0 10px ${progressBarColor}40`,
-                        }}
-                      />
-                    </div>
-                    <div className="budget-progress-percentage">
-                      {percentageUsed.toFixed(0)}% of budget used
-                    </div>
-                  </>
-                ) : (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                    Add a budget for this group in the Groups manager tab to track progress.
-                  </p>
-                )}
-              </div>
-
               {/* Two-Column Grid: Left: OwingLogicCard, Right: MembersDisplay */}
               <div className="group-dashboard-grid">
                 <OwingLogicCard
                   transactions={transactions}
                   members={members}
                   currentUserId={user?.id || user?._id}
+                  selectedGroup={selectedGroup}
+                  onSettlementCreated={handleGroupTransactionAdded}
                 />
                 <MembersDisplay
                   members={members}
@@ -351,25 +441,26 @@ export default function GroupDashboard({ user, onUserUpdate }) {
                   onGroupDeleted={handleGroupDeleted}
                   onGroupLeft={handleGroupLeft}
                   onGroupRenamed={handleGroupRenamed}
+                  onManageBudget={() => setShowBudgetModal(true)}
                 />
               </div>
 
-              {/* Log Expense Button */}
+              {/* Add Transaction Button */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
                 <button
                   className="btn-primary"
-                  id="group-log-expense-btn"
+                  id="group-add-transaction-btn"
                   onClick={() => setShowExpenseModal(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.7rem 1.4rem' }}
                 >
                   <PlusCircle size={18} />
-                  Log Expense
+                  Add Transaction
                 </button>
               </div>
 
               {/* Transaction Table */}
               <div style={{ marginTop: '1.5rem' }}>
-                <GroupTransactionTable transactions={transactions} />
+                <GroupTransactionTable transactions={transactions} onTransactionClick={setActiveTransaction} />
               </div>
 
               {/* Modal Overlay */}
@@ -398,6 +489,26 @@ export default function GroupDashboard({ user, onUserUpdate }) {
                     />
                   </div>
                 </div>
+              )}
+
+              {activeTransaction && (
+                <TransactionDetailModal
+                  transaction={activeTransaction}
+                  onClose={() => setActiveTransaction(null)}
+                  currentUserId={user?.id || user?._id}
+                  members={members}
+                  onDelete={handleTransactionDeleted}
+                  onSettled={handleGroupTransactionAdded}
+                />
+              )}
+
+              {showBudgetModal && selectedGroup && (
+                <ManageGroupBudgetModal
+                  isOpen={showBudgetModal}
+                  group={selectedGroup}
+                  onClose={() => setShowBudgetModal(false)}
+                  onBudgetUpdated={handleBudgetUpdated}
+                />
               )}
             </>
           )}

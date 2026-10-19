@@ -10,7 +10,17 @@ const CATEGORIES = [
   'Transport',
   'Healthcare',
   'Shopping',
-  'Other',
+  'Electricity',
+  'Water bill',
+  'Tax',
+  'Insurance',
+  'Groceries',
+  'Personal care',
+  'Pet',
+  'Gift',
+  'Settlement',
+  'Others',
+  'Custom',
 ];
 
 const INITIAL_FORM = {
@@ -31,6 +41,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
   const [groups, setGroups] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
   const [fetchingMembers, setFetchingMembers] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
 
   // When a lockedGroupId is provided (e.g. from GroupDashboard modal), pre-seed it
   useEffect(() => {
@@ -107,17 +118,50 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
     fetchMembers();
   }, [form.selectedGroupIds, user]);
 
-  // Keep splits clean by removing any members that are no longer in groupMembers list
+  const currentUserId = user?.id || user?._id;
+  const allMembers = currentUserId 
+    ? [
+        {
+          _id: currentUserId,
+          name: user?.name ? `${user.name} (You)` : 'You',
+          email: user?.email || '',
+        },
+        ...groupMembers,
+      ]
+    : groupMembers;
+
+  // Sync and clean splits when groupMembers, splitType, or selectedGroupIds change
   useEffect(() => {
-    const memberIds = groupMembers.map((m) => m._id);
-    const cleanedSplits = form.splits.filter((s) => memberIds.includes(s.userId));
-    if (cleanedSplits.length !== form.splits.length) {
+    if (form.selectedGroupIds.length === 0) {
+      setForm((prev) => ({ ...prev, splits: [] }));
+      return;
+    }
+
+    const allowedIds = form.splitType === 'equal' 
+      ? allMembers.map((m) => m._id)
+      : groupMembers.map((m) => m._id);
+
+    const cleanedSplits = form.splits.filter((s) => allowedIds.includes(s.userId));
+
+    // If splitType is equal and the splits are empty (e.g. newly switched or loaded),
+    // initialize them to include all members, each with 1 share.
+    if (form.splitType === 'equal' && cleanedSplits.length === 0 && allowedIds.length > 0) {
+      const defaultSplits = allowedIds.map((id) => ({
+        userId: id,
+        shares: 1
+      }));
+      setForm((prev) => ({ ...prev, splits: defaultSplits }));
+    } else if (cleanedSplits.length !== form.splits.length) {
       setForm((prev) => ({ ...prev, splits: cleanedSplits }));
     }
-  }, [groupMembers]);
+  }, [groupMembers, form.splitType, form.selectedGroupIds, user]);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+    if (name === 'category' && value !== 'Custom') {
+      setCustomCategory('');
+    }
     setError('');
     setSuccess('');
   };
@@ -134,16 +178,19 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
       ...form,
       selectedGroupIds: newGroupIds,
       splitType: newGroupIds.length === 0 ? 'equal' : form.splitType,
-      splits: newGroupIds.length === 0 ? [] : form.splits,
+      splits: [], // Reset splits so they reinitialize for the new group members
     });
     setError('');
   };
 
   const handleSplitModeChange = (mode) => {
+    const newSplits = mode === 'equal'
+      ? allMembers.map((m) => ({ userId: m._id, shares: 1 }))
+      : [];
     setForm({
       ...form,
       splitType: mode,
-      splits: mode === 'equal' ? [] : form.splits,
+      splits: newSplits,
     });
     setError('');
   };
@@ -171,6 +218,44 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
     setError('');
   };
 
+  const handleEqualSplitCheckboxToggle = (memberId) => {
+    const isChecked = form.splits.some((s) => s.userId === memberId);
+    let newSplits;
+    if (isChecked) {
+      newSplits = form.splits.filter((s) => s.userId !== memberId);
+    } else {
+      newSplits = [...form.splits, { userId: memberId, shares: 1 }];
+    }
+    setForm({ ...form, splits: newSplits });
+    setError('');
+  };
+
+  const handleEqualSplitSharesChange = (memberId, val) => {
+    const sharesVal = val === '' ? '' : Math.max(1, parseInt(val) || 1);
+    const newSplits = form.splits.map((s) => {
+      if (s.userId === memberId) {
+        return { ...s, shares: sharesVal };
+      }
+      return s;
+    });
+    setForm({ ...form, splits: newSplits });
+    setError('');
+  };
+
+  const totalShares = form.splitType === 'equal'
+    ? form.splits.reduce((sum, s) => sum + Number(s.shares || 0), 0)
+    : 0;
+
+  const calculatedEqualSplits = form.splits.map((s) => {
+    const memberShares = Number(s.shares || 0);
+    const totalAmount = Number(form.amount || 0);
+    const amount = totalShares > 0 ? (totalAmount * memberShares) / totalShares : 0;
+    return {
+      ...s,
+      amount: parseFloat(amount.toFixed(2))
+    };
+  });
+
   const totalSplitAmount = form.splits.reduce((sum, s) => sum + Number(s.amount || 0), 0);
   const remainingAmount = Math.max(0, Number(form.amount || 0) - totalSplitAmount);
 
@@ -189,18 +274,50 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
       return;
     }
 
+    // Custom category validation
+    const categoryToSave = form.category === 'Custom' ? customCategory.trim() : form.category;
+    if (form.category === 'Custom' && !customCategory.trim()) {
+      setError('Please enter a custom category name');
+      return;
+    }
+
     const isShared = form.selectedGroupIds.length > 0;
     const isCustom = form.splitType === 'custom' && isShared;
-    const formattedSplits = isCustom
-      ? form.splits
-        .map((s) => ({ userId: s.userId, amount: Number(s.amount) }))
-        .filter((s) => s.amount > 0)
-      : [];
+    const isEqualSplit = form.splitType === 'equal' && isShared;
+
+    let formattedSplits = [];
+    if (isShared) {
+      if (isCustom) {
+        formattedSplits = form.splits
+          .map((s) => ({ userId: s.userId, amount: Number(s.amount) }))
+          .filter((s) => s.amount > 0);
+      } else if (isEqualSplit) {
+        formattedSplits = calculatedEqualSplits
+          .map((s) => ({
+            userId: s.userId,
+            shares: Number(s.shares || 1),
+            amount: Number(s.amount),
+          }))
+          .filter((s) => s.shares > 0 && s.amount > 0);
+      }
+    }
 
     if (isCustom) {
       const splitTotal = formattedSplits.reduce((sum, s) => sum + s.amount, 0);
       if (splitTotal > Number(form.amount)) {
         setError('Total split amount cannot exceed the transaction amount');
+        return;
+      }
+    }
+
+    if (isEqualSplit) {
+      const hasInvalidShares = form.splits.some(s => s.shares === '' || Number(s.shares) <= 0);
+      if (hasInvalidShares) {
+        setError('Please configure positive shares for all selected members');
+        return;
+      }
+      if (formattedSplits.length === 0) {
+        setError('At least one member must be selected with positive shares');
         return;
       }
     }
@@ -220,7 +337,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
           description: form.description.trim(),
           amount: Number(form.amount),
           type: form.type,
-          category: form.category,
+          category: categoryToSave,
           isShared,
           groupIds: form.selectedGroupIds,
           splitType: isShared ? form.splitType : 'equal',
@@ -235,6 +352,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
       }
 
       setSuccess('Transaction added successfully!');
+      setCustomCategory('');
       setForm({
         ...INITIAL_FORM,
         // Keep the lock if we are inside a group modal
@@ -244,11 +362,15 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
       if (onTransactionAdded) {
         onTransactionAdded(data);
       }
+      try {
+        localStorage.setItem('home_cache_dirty', 'true');
+        window.dispatchEvent(new Event('finsplit_data_changed'));
+      } catch (e) {}
 
-      // Auto-clear success message and close modal if in locked mode
+      // Auto-clear success message and close modal if onClose handler provided
       setTimeout(() => {
         setSuccess('');
-        if (lockedGroupId && onClose) {
+        if (onClose) {
           onClose();
         }
       }, 1500);
@@ -264,8 +386,8 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
   return (
     <div className="glass-card transaction-form">
       <h2 className="transaction-form__title">
-        <PlusCircle size={22} style={{ color: '#8b5cf6' }} />
-        <span>{lockedGroupId ? 'Log Group Expense' : 'Add Transaction'}</span>
+        <PlusCircle size={22} style={{ color: 'var(--brand-primary)' }} />
+        <span>{lockedGroupId ? 'Add Group Transaction' : 'Add Transaction'}</span>
       </h2>
 
       {error && (
@@ -282,7 +404,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
         </div>
       )}
 
-      <form onSubmit={handleSubmit} id="transaction-form">
+      <form onSubmit={handleSubmit} id="transaction-form" autoComplete="off">
         <div className="form-group">
           <label className="form-label" htmlFor="txn-description">Description</label>
           <input
@@ -294,11 +416,17 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
             value={form.description}
             onChange={handleChange}
             disabled={loading}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
+            data-lpignore="true"
+            data-form-type="other"
           />
         </div>
 
         <div className="form-group">
-          <label className="form-label" htmlFor="txn-amount">Amount ($)</label>
+          <label className="form-label" htmlFor="txn-amount">Amount (₹)</label>
           <input
             id="txn-amount"
             className="form-input form-input--no-icon"
@@ -310,6 +438,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
             value={form.amount}
             onChange={handleChange}
             disabled={loading}
+            autoComplete="off"
           />
         </div>
 
@@ -348,18 +477,37 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
           </div>
         </div>
 
+        {form.category === 'Custom' && (
+          <div className="form-group" style={{ marginTop: '0.25rem' }}>
+            <label className="form-label" htmlFor="txn-custom-category">Custom Category Name</label>
+            <input
+              id="txn-custom-category"
+              className="form-input form-input--no-icon"
+              type="text"
+              name="customCategory"
+              placeholder="e.g. Subscriptions"
+              value={customCategory}
+              onChange={(e) => {
+                setCustomCategory(e.target.value);
+                setError('');
+              }}
+              disabled={loading}
+              autoComplete="off"
+            />
+          </div>
+        )}
+
         {/* Share with Multiple Groups Section */}
         {/* When a group is locked (e.g. inside GroupDashboard modal), show a badge instead of the checkbox list */}
         {lockedGroupId ? (
           <div className="form-group">
             <label className="form-label">
-              <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem', color: '#06b6d4' }} />
+              <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem', color: 'var(--brand-primary)' }} />
               Shared With
             </label>
             <div className="locked-group-badge">
-              <Users size={14} style={{ color: '#06b6d4' }} />
+              <Users size={14} style={{ color: 'var(--brand-primary)' }} />
               <span>{lockedGroupName || lockedGroupId}</span>
-              <span className="locked-group-badge__pill">Auto-attached</span>
             </div>
 
             {/* Split type still available in locked mode for expenses */}
@@ -385,13 +533,86 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                   </button>
                 </div>
 
+                {/* Equal Split Member Picker */}
+                {form.splitType === 'equal' && (
+                  <div className="equal-split-container">
+                    <label className="form-label" style={{ marginBottom: '0.5rem' }}>Configure Shares for Members</label>
+                    {fetchingMembers ? (
+                      <div className="members-loading" style={{ padding: '1rem 0' }}>
+                        <Loader2 className="animate-spin" size={18} style={{ color: 'var(--brand-primary)' }} />
+                        <span>Loading group members...</span>
+                      </div>
+                    ) : allMembers.length === 0 ? (
+                      <p className="share-group-hint" style={{ color: 'var(--text-muted)' }}>
+                        No members in this group to split with.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="split-remaining-bar">
+                          <span className="split-remaining-label">Total Shares:</span>
+                          <span className="split-remaining-value" style={{ color: 'var(--brand-primary)' }}>
+                            {totalShares} {totalShares === 1 ? 'share' : 'shares'}
+                          </span>
+                        </div>
+
+                        <div className="split-members-list">
+                          {allMembers.map((member) => {
+                            const splitEntry = form.splits.find((s) => s.userId === member._id);
+                            const isMemberChecked = !!splitEntry;
+                            const displayAmount = splitEntry ? calculatedEqualSplits.find((s) => s.userId === member._id)?.amount : 0;
+                            return (
+                              <div
+                                key={member._id}
+                                className={`split-member-row ${isMemberChecked ? 'split-member-row--active' : ''}`}
+                                id={`equal-split-row-${member._id}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isMemberChecked}
+                                  onChange={() => handleEqualSplitCheckboxToggle(member._id)}
+                                  disabled={loading}
+                                  style={{ accentColor: 'var(--brand-primary)', width: '16px', height: '16px' }}
+                                />
+                                <div className="split-member-info">
+                                  <span className="split-member-name">{member.name}</span>
+                                  <span className="split-member-email">{member.email}</span>
+                                </div>
+                                <div className="split-shares-input-container" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <div className="split-amount-input-wrapper" style={{ width: '65px' }}>
+                                    <input
+                                      type="number"
+                                      className="split-amount-input"
+                                      placeholder="1"
+                                      min="1"
+                                      step="1"
+                                      value={splitEntry ? splitEntry.shares : ''}
+                                      onChange={(e) => handleEqualSplitSharesChange(member._id, e.target.value)}
+                                      disabled={loading || !isMemberChecked}
+                                      style={{ textAlign: 'center' }}
+                                      autoComplete="off"
+                                    />
+                                  </div>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', minWidth: '45px' }}>share(s)</span>
+                                  <div style={{ minWidth: '70px', textAlign: 'right', fontWeight: 600, color: isMemberChecked ? '#22C55E' : 'var(--text-muted)' }}>
+                                    {displayAmount !== undefined ? `₹${displayAmount.toFixed(2)}` : '₹0.00'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Custom Split Member Picker */}
                 {form.splitType === 'custom' && (
                   <div className="custom-split-container">
                     <label className="form-label" style={{ marginBottom: '0.5rem' }}>Assign Amounts to Members</label>
                     {fetchingMembers ? (
                       <div className="members-loading" style={{ padding: '1rem 0' }}>
-                        <Loader2 className="animate-spin" size={18} style={{ color: '#06b6d4' }} />
+                        <Loader2 className="animate-spin" size={18} style={{ color: 'var(--brand-primary)' }} />
                         <span>Loading group members...</span>
                       </div>
                     ) : groupMembers.length === 0 ? (
@@ -404,9 +625,9 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                           <span className="split-remaining-label">Remaining to assign:</span>
                           <span
                             className="split-remaining-value"
-                            style={{ color: remainingAmount > 0 ? '#22d3ee' : '#10b981' }}
+                            style={{ color: remainingAmount > 0 ? 'var(--brand-primary)' : '#22C55E' }}
                           >
-                            ${remainingAmount.toFixed(2)} / ${Number(form.amount || 0).toFixed(2)}
+                            ₹{remainingAmount.toFixed(2)} / ₹{Number(form.amount || 0).toFixed(2)}
                           </span>
                         </div>
 
@@ -425,14 +646,14 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                                   checked={isMemberChecked}
                                   onChange={() => handleSplitCheckboxChange(member._id)}
                                   disabled={loading}
-                                  style={{ accentColor: '#8b5cf6', width: '16px', height: '16px' }}
+                                  style={{ accentColor: 'var(--brand-primary)', width: '16px', height: '16px' }}
                                 />
                                 <div className="split-member-info">
                                   <span className="split-member-name">{member.name}</span>
                                   <span className="split-member-email">{member.email}</span>
                                 </div>
                                 <div className="split-amount-input-wrapper">
-                                  <span className="split-amount-input-symbol">$</span>
+                                  <span className="split-amount-input-symbol">₹</span>
                                   <input
                                     type="number"
                                     className="split-amount-input"
@@ -443,6 +664,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                                     value={splitEntry ? splitEntry.amount : ''}
                                     onChange={(e) => handleSplitAmountChange(member._id, e.target.value)}
                                     disabled={loading || !isMemberChecked}
+                                    autoComplete="off"
                                   />
                                 </div>
                               </div>
@@ -461,7 +683,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
           userGroupIds.length > 0 && (
             <div className="form-group share-group-field">
               <label className="form-label">
-                <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem', color: '#06b6d4' }} />
+                <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem', color: 'var(--brand-primary)' }} />
                 Share with Groups
               </label>
               <div className="group-checkbox-list">
@@ -508,13 +730,86 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                     </button>
                   </div>
 
+                  {/* Equal Split Member Picker */}
+                  {form.splitType === 'equal' && (
+                    <div className="equal-split-container">
+                      <label className="form-label" style={{ marginBottom: '0.5rem' }}>Configure Shares for Members</label>
+                      {fetchingMembers ? (
+                        <div className="members-loading" style={{ padding: '1rem 0' }}>
+                          <Loader2 className="animate-spin" size={18} style={{ color: 'var(--brand-primary)' }} />
+                          <span>Loading group members...</span>
+                        </div>
+                      ) : allMembers.length === 0 ? (
+                        <p className="share-group-hint" style={{ color: 'var(--text-muted)' }}>
+                          No members in selected groups to split with.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="split-remaining-bar">
+                            <span className="split-remaining-label">Total Shares:</span>
+                            <span className="split-remaining-value" style={{ color: 'var(--brand-primary)' }}>
+                              {totalShares} {totalShares === 1 ? 'share' : 'shares'}
+                            </span>
+                          </div>
+
+                          <div className="split-members-list">
+                            {allMembers.map((member) => {
+                              const splitEntry = form.splits.find((s) => s.userId === member._id);
+                              const isMemberChecked = !!splitEntry;
+                              const displayAmount = splitEntry ? calculatedEqualSplits.find((s) => s.userId === member._id)?.amount : 0;
+                              return (
+                                <div
+                                  key={member._id}
+                                  className={`split-member-row ${isMemberChecked ? 'split-member-row--active' : ''}`}
+                                  id={`equal-split-row-${member._id}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isMemberChecked}
+                                    onChange={() => handleEqualSplitCheckboxToggle(member._id)}
+                                    disabled={loading}
+                                    style={{ accentColor: 'var(--brand-primary)', width: '16px', height: '16px' }}
+                                  />
+                                  <div className="split-member-info">
+                                    <span className="split-member-name">{member.name}</span>
+                                    <span className="split-member-email">{member.email}</span>
+                                  </div>
+                                  <div className="split-shares-input-container" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <div className="split-amount-input-wrapper" style={{ width: '65px' }}>
+                                      <input
+                                        type="number"
+                                        className="split-amount-input"
+                                        placeholder="1"
+                                        min="1"
+                                        step="1"
+                                        value={splitEntry ? splitEntry.shares : ''}
+                                        onChange={(e) => handleEqualSplitSharesChange(member._id, e.target.value)}
+                                        disabled={loading || !isMemberChecked}
+                                        style={{ textAlign: 'center' }}
+                                        autoComplete="off"
+                                      />
+                                    </div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', minWidth: '45px' }}>share(s)</span>
+                                    <div style={{ minWidth: '70px', textAlign: 'right', fontWeight: 600, color: isMemberChecked ? '#22C55E' : 'var(--text-muted)' }}>
+                                      {displayAmount !== undefined ? `₹${displayAmount.toFixed(2)}` : '₹0.00'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* Custom Split Member Picker */}
                   {form.splitType === 'custom' && (
                     <div className="custom-split-container">
                       <label className="form-label" style={{ marginBottom: '0.5rem' }}>Assign Amounts to Members</label>
                       {fetchingMembers ? (
                         <div className="members-loading" style={{ padding: '1rem 0' }}>
-                          <Loader2 className="animate-spin" size={18} style={{ color: '#06b6d4' }} />
+                          <Loader2 className="animate-spin" size={18} style={{ color: 'var(--brand-primary)' }} />
                           <span>Loading group members...</span>
                         </div>
                       ) : groupMembers.length === 0 ? (
@@ -527,9 +822,9 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                             <span className="split-remaining-label">Remaining to assign:</span>
                             <span
                               className="split-remaining-value"
-                              style={{ color: remainingAmount > 0 ? '#22d3ee' : '#10b981' }}
+                              style={{ color: remainingAmount > 0 ? 'var(--brand-primary)' : '#22C55E' }}
                             >
-                              ${remainingAmount.toFixed(2)} / ${Number(form.amount || 0).toFixed(2)}
+                              ₹{remainingAmount.toFixed(2)} / ₹{Number(form.amount || 0).toFixed(2)}
                             </span>
                           </div>
 
@@ -548,14 +843,14 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                                     checked={isMemberChecked}
                                     onChange={() => handleSplitCheckboxChange(member._id)}
                                     disabled={loading}
-                                    style={{ accentColor: '#8b5cf6', width: '16px', height: '16px' }}
+                                    style={{ accentColor: 'var(--brand-primary)', width: '16px', height: '16px' }}
                                   />
                                   <div className="split-member-info">
                                     <span className="split-member-name">{member.name}</span>
                                     <span className="split-member-email">{member.email}</span>
                                   </div>
                                   <div className="split-amount-input-wrapper">
-                                    <span className="split-amount-input-symbol">$</span>
+                                    <span className="split-amount-input-symbol">₹</span>
                                     <input
                                       type="number"
                                       className="split-amount-input"
@@ -566,6 +861,7 @@ export default function TransactionForm({ onTransactionAdded, user, lockedGroupI
                                       value={splitEntry ? splitEntry.amount : ''}
                                       onChange={(e) => handleSplitAmountChange(member._id, e.target.value)}
                                       disabled={loading || !isMemberChecked}
+                                      autoComplete="off"
                                     />
                                   </div>
                                 </div>

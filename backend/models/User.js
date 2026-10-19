@@ -15,24 +15,59 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Please add a password']
+    required: function () {
+      return !this.googleId;
+    }
+  },
+  googleId: {
+    type: String,
+    sparse: true,
+    unique: true
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
+  },
+  avatar: {
+    type: String,
+    default: ''
   },
   groupIds: {
     type: [String],
     default: []
-  }
+  },
+  monthlyBudgetLimit: {
+    type: Number,
+    default: 0
+  },
+  categoryBudgets: [{
+    category: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    limit: {
+      type: Number,
+      required: true,
+      min: 0
+    }
+  }]
 }, {
   timestamps: true
 });
 
 // Compare entered password with hashed password in database
 UserSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!this.password) {
+    return false;
+  }
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 // Encrypt password using bcrypt before saving to database
 UserSchema.pre('save', async function () {
-  if (!this.isModified('password')) {
+  if (!this.isModified('password') || !this.password) {
     return;
   }
 

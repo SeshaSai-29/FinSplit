@@ -1,27 +1,21 @@
 import mongoose from 'mongoose';
 
 const connectDB = async () => {
-  const primaryUri = process.env.MONGO_URI;
-  const fallbackUri = 'mongodb://localhost:27017/personal_finance_tracker';
+  const mongoUri = process.env.MONGO_URI;
+
+  if (!mongoUri) {
+    console.error('MongoDB Connection Error: MONGO_URI is not defined in your environment (.env).');
+    process.exit(1);
+  }
 
   try {
-    const conn = await mongoose.connect(primaryUri, {
-      serverSelectionTimeoutMS: 3000
+    const conn = await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000
     });
-    console.log(`MongoDB Connected (Primary): ${conn.connection.host}`);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    console.error(`MongoDB Primary Connection Error: ${error.message}`);
-    console.log('Attempting connection to local MongoDB fallback...');
-    
-    try {
-      const connFallback = await mongoose.connect(fallbackUri, {
-        serverSelectionTimeoutMS: 3000
-      });
-      console.log(`MongoDB Connected (Fallback): ${connFallback.connection.host}`);
-    } catch (fallbackError) {
-      console.error(`MongoDB Fallback Connection Error: ${fallbackError.message}`);
-      console.log('Database connection could not be established. Buffering will occur.');
-    }
+    console.error(`MongoDB Connection Error: ${error.message}`);
+    process.exit(1);
   }
 };
 

@@ -149,9 +149,10 @@ router.get('/:groupId/members', protect, async (req, res) => {
 });
 
 // @route   POST /api/groups/:groupId/budget
-// @desc    Update the budget for a specific group
+// @route   PUT /api/groups/:groupId/budget
+// @desc    Add or update the budget for a specific group
 // @access  Private (must be the owner/creator of the group)
-router.post('/:groupId/budget', protect, async (req, res) => {
+const handleUpdateGroupBudget = async (req, res) => {
   const { groupId } = req.params;
   const { budget } = req.body;
 
@@ -166,17 +167,55 @@ router.post('/:groupId/budget', protect, async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: only the group owner can update the budget' });
     }
 
-    if (budget === undefined || typeof budget !== 'number') {
-      return res.status(400).json({ message: 'Please provide a valid budget number' });
+    if (budget === undefined || budget === null || budget === '') {
+      return res.status(400).json({ message: 'Please provide a valid budget amount' });
     }
 
-    group.budget = budget;
+    const numericBudget = Number(budget);
+    if (isNaN(numericBudget) || numericBudget < 0) {
+      return res.status(400).json({ message: 'Please provide a valid positive budget number' });
+    }
+
+    group.budget = Math.round(numericBudget * 100) / 100;
     await group.save();
 
-    res.json({ message: 'Budget updated', group });
+    res.json({
+      message: group.budget > 0 ? 'Group budget updated successfully' : 'Group budget removed successfully',
+      group
+    });
   } catch (error) {
     console.error('Update Group Budget Error:', error);
     res.status(500).json({ message: 'Server error while updating group budget' });
+  }
+};
+
+router.post('/:groupId/budget', protect, handleUpdateGroupBudget);
+router.put('/:groupId/budget', protect, handleUpdateGroupBudget);
+
+// @route   DELETE /api/groups/:groupId/budget
+// @desc    Remove the budget for a specific group (resets to 0)
+// @access  Private (must be the owner/creator of the group)
+router.delete('/:groupId/budget', protect, async (req, res) => {
+  const { groupId } = req.params;
+
+  try {
+    const group = await Group.findOne({ code: groupId });
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // Verify the logged-in user is the owner/creator of this group
+    if (group.createdBy !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden: only the group owner can remove the budget' });
+    }
+
+    group.budget = 0;
+    await group.save();
+
+    res.json({ message: 'Group budget removed successfully', group });
+  } catch (error) {
+    console.error('Remove Group Budget Error:', error);
+    res.status(500).json({ message: 'Server error while removing group budget' });
   }
 });
 

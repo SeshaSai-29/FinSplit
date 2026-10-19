@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Loader2, Trash2, LogOut, Edit3 } from 'lucide-react';
+import { Users, Loader2, Trash2, LogOut, Edit3, Edit2 } from 'lucide-react';
+import ConfirmDeleteModal from './ConfirmDeleteModal';
 
 export default function MembersDisplay({ 
   members = [], 
@@ -8,11 +9,19 @@ export default function MembersDisplay({
   currentUser = null,
   onGroupDeleted = null,
   onGroupLeft = null,
-  onGroupRenamed = null
+  onGroupRenamed = null,
+  onManageBudget = null
 }) {
   const [newGroupName, setNewGroupName] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [confirmModalConfig, setConfirmModalConfig] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Delete',
+    onConfirm: null
+  });
 
   // Sync input value with group name when active group changes
   useEffect(() => {
@@ -67,10 +76,19 @@ export default function MembersDisplay({
     }
   };
 
-  const handleDelete = async () => {
-    if (!group || !window.confirm(`Are you absolutely sure you want to delete the group "${group.name}"? This will delete all shared transactions and remove all members.`)) {
-      return;
-    }
+  const openDeleteGroupModal = () => {
+    if (!group) return;
+    setConfirmModalConfig({
+      isOpen: true,
+      title: 'Delete Group',
+      message: `Are you absolutely sure you want to delete the group "${group.name}"? This will delete all shared transactions and remove all members.`,
+      confirmText: 'Delete Group',
+      onConfirm: executeDeleteGroup
+    });
+  };
+
+  const executeDeleteGroup = async () => {
+    if (!group) return;
 
     setActionLoading(true);
     setActionError('');
@@ -89,6 +107,7 @@ export default function MembersDisplay({
         throw new Error(data.message || 'Failed to delete group');
       }
 
+      setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
       if (onGroupDeleted) {
         onGroupDeleted();
       }
@@ -99,10 +118,19 @@ export default function MembersDisplay({
     }
   };
 
-  const handleLeave = async () => {
-    if (!group || !window.confirm(`Are you sure you want to leave the group "${group.name}"? You will lose access to all its transactions.`)) {
-      return;
-    }
+  const openLeaveGroupModal = () => {
+    if (!group) return;
+    setConfirmModalConfig({
+      isOpen: true,
+      title: 'Leave Group',
+      message: `Are you sure you want to leave the group "${group.name}"? You will lose access to all its transactions.`,
+      confirmText: 'Leave Group',
+      onConfirm: executeLeaveGroup
+    });
+  };
+
+  const executeLeaveGroup = async () => {
+    if (!group) return;
 
     setActionLoading(true);
     setActionError('');
@@ -121,6 +149,7 @@ export default function MembersDisplay({
         throw new Error(data.message || 'Failed to leave group');
       }
 
+      setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
       if (onGroupLeft) {
         onGroupLeft();
       }
@@ -134,7 +163,7 @@ export default function MembersDisplay({
   return (
     <div className="glass-card members-card">
       <h3 className="members-card__title">
-        <Users size={20} style={{ color: '#06b6d4' }} />
+        <Users size={20} style={{ color: 'var(--brand-primary)' }} />
         <span>Group Members</span>
         <span className="members-count-badge">{members.length}</span>
       </h3>
@@ -147,7 +176,7 @@ export default function MembersDisplay({
 
       {loading ? (
         <div className="members-loading">
-          <Loader2 className="animate-spin" size={24} style={{ color: '#06b6d4' }} />
+          <Loader2 className="animate-spin" size={24} style={{ color: 'var(--brand-primary)' }} />
           <span>Loading members...</span>
         </div>
       ) : members.length === 0 ? (
@@ -173,9 +202,9 @@ export default function MembersDisplay({
                     fontSize: '0.7rem',
                     padding: '0.1rem 0.4rem',
                     borderRadius: '4px',
-                    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                    color: '#06b6d4',
-                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    color: 'var(--brand-primary)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
                     fontWeight: 600
                   }}>Owner</span>
                 )}
@@ -186,11 +215,11 @@ export default function MembersDisplay({
       )}
 
       {!loading && group && (
-        <div className="member-actions" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div className="member-actions" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {isOwner ? (
             <>
               {/* Rename Form */}
-              <form onSubmit={handleRename} className="rename-group-section" style={{ display: 'flex', gap: '0.5rem' }}>
+              <form onSubmit={handleRename} autoComplete="off" className="rename-group-section" style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
                   className="form-input"
@@ -199,13 +228,14 @@ export default function MembersDisplay({
                   onChange={(e) => setNewGroupName(e.target.value)}
                   disabled={actionLoading}
                   style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', height: '36px' }}
+                  autoComplete="off"
                   required
                 />
                 <button
                   type="submit"
                   disabled={actionLoading || !newGroupName.trim() || newGroupName.trim() === group.name}
                   className="btn-primary"
-                  style={{ padding: '0 1rem', fontSize: '0.85rem', height: '36px', minWidth: '80px', borderRadius: '8px' }}
+                  style={{ padding: '0 1rem', fontSize: '0.85rem', height: '36px', minWidth: '80px', borderRadius: '6px' }}
                 >
                   {actionLoading ? (
                     <Loader2 className="animate-spin" size={14} />
@@ -218,11 +248,44 @@ export default function MembersDisplay({
                 </button>
               </form>
               
+              {/* Budget Management Button */}
+              {onManageBudget && (
+                <button
+                  type="button"
+                  onClick={onManageBudget}
+                  disabled={actionLoading}
+                  style={{
+                    width: '100%',
+                    height: '36px',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                    color: 'var(--brand-primary)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    transition: 'all 0.2s'
+                  }}
+                  id="members-display-manage-budget-btn"
+                >
+                  <Edit2 size={15} />
+                  <span>
+                    {group.budget && group.budget > 0
+                      ? 'Edit Budget'
+                      : 'Set Budget'}
+                  </span>
+                </button>
+              )}
+
               {/* Delete Button */}
               <button
-                onClick={handleDelete}
+                onClick={openDeleteGroupModal}
                 disabled={actionLoading}
-                className="btn-danger-custom"
+                className="btn-danger"
                 style={{
                   width: '100%',
                   height: '36px',
@@ -231,13 +294,9 @@ export default function MembersDisplay({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '0.5rem',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  color: '#ef4444',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   cursor: 'pointer',
-                  fontWeight: 600,
-                  transition: 'all 0.2s'
+                  fontWeight: 600
                 }}
               >
                 {actionLoading ? (
@@ -253,9 +312,8 @@ export default function MembersDisplay({
           ) : (
             /* Leave Button */
             <button
-              onClick={handleLeave}
+              onClick={openLeaveGroupModal}
               disabled={actionLoading}
-              className="btn-warning-custom"
               style={{
                 width: '100%',
                 height: '36px',
@@ -264,10 +322,10 @@ export default function MembersDisplay({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '0.5rem',
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.4)',
-                color: '#f59e0b',
-                borderRadius: '8px',
+                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: '#F59E0B',
+                borderRadius: '6px',
                 cursor: 'pointer',
                 fontWeight: 600,
                 transition: 'all 0.2s'
@@ -285,6 +343,16 @@ export default function MembersDisplay({
           )}
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmModalConfig.isOpen}
+        title={confirmModalConfig.title}
+        message={confirmModalConfig.message}
+        confirmText={confirmModalConfig.confirmText}
+        onConfirm={confirmModalConfig.onConfirm}
+        onCancel={() => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }))}
+        isDeleting={actionLoading}
+      />
     </div>
   );
 }

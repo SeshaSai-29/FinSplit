@@ -1,7 +1,20 @@
-import React from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Wallet } from 'lucide-react';
+import React, { useState } from 'react';
+import { TrendingUp, TrendingDown, IndianRupee, Wallet } from 'lucide-react';
+import SettleModal from './SettleModal';
 
-export default function OwingLogicCard({ transactions = [], members = [], currentUserId }) {
+export default function OwingLogicCard({
+  transactions = [],
+  members = [],
+  currentUserId,
+  selectedGroup = null,
+  onSettlementCreated = null,
+}) {
+  const [settleModalConfig, setSettleModalConfig] = useState({
+    isOpen: false,
+    payee: null,
+    owedAmount: 0,
+  });
+
   // If no members or transactions, return default values
   const memberCount = members.length || 1;
 
@@ -24,8 +37,20 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
     let userShare = 0;
 
     if (!txn.splitType || txn.splitType === 'equal') {
-      // Split equally among all group members
-      userShare = txn.amount / memberCount;
+      if (txn.splits && txn.splits.length > 0) {
+        const userSplit = txn.splits.find((s) => {
+          const splitUserId = s.userId && typeof s.userId === 'object' ? s.userId._id : s.userId;
+          return splitUserId === currentUserId;
+        });
+        if (userSplit) {
+          userShare = userSplit.amount;
+        } else {
+          userShare = 0;
+        }
+      } else {
+        // Split equally among all group members
+        userShare = txn.amount / memberCount;
+      }
     } else if (txn.splitType === 'custom') {
       // Custom split: find if the current user is explicitly assigned an amount
       const userSplit = txn.splits?.find((s) => {
@@ -67,17 +92,36 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
     const isPayer = payerId === currentUserId;
 
     if (!txn.splitType || txn.splitType === 'equal') {
-      const share = txn.amount / memberCount;
-      if (isPayer) {
-        members.forEach((m) => {
-          const mId = m._id || m.id;
-          if (mId !== currentUserId) {
-            memberBalances[mId] = (memberBalances[mId] || 0) + share;
+      if (txn.splits && txn.splits.length > 0) {
+        if (isPayer) {
+          txn.splits.forEach((s) => {
+            const sUserId = s.userId && typeof s.userId === 'object' ? s.userId._id : s.userId;
+            if (sUserId !== currentUserId) {
+              memberBalances[sUserId] = (memberBalances[sUserId] || 0) + s.amount;
+            }
+          });
+        } else {
+          const userSplit = txn.splits.find((s) => {
+            const sUserId = s.userId && typeof s.userId === 'object' ? s.userId._id : s.userId;
+            return sUserId === currentUserId;
+          });
+          if (userSplit && payerId && payerId !== currentUserId) {
+            memberBalances[payerId] = (memberBalances[payerId] || 0) - userSplit.amount;
           }
-        });
+        }
       } else {
-        if (payerId && payerId !== currentUserId) {
-          memberBalances[payerId] = (memberBalances[payerId] || 0) - share;
+        const share = txn.amount / memberCount;
+        if (isPayer) {
+          members.forEach((m) => {
+            const mId = m._id || m.id;
+            if (mId !== currentUserId) {
+              memberBalances[mId] = (memberBalances[mId] || 0) + share;
+            }
+          });
+        } else {
+          if (payerId && payerId !== currentUserId) {
+            memberBalances[payerId] = (memberBalances[payerId] || 0) - share;
+          }
         }
       }
     } else if (txn.splitType === 'custom') {
@@ -128,9 +172,9 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
   });
 
   const formatCurrency = (val) =>
-    Math.abs(val).toLocaleString('en-US', {
+    Math.abs(val).toLocaleString('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       minimumFractionDigits: 2,
     });
 
@@ -142,20 +186,34 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
   if (balance > 0.01) {
     cardClass = 'owing-card--green';
     statusText = "You're in the green!";
-    statusColor = '#10b981';
+    statusColor = '#22C55E';
     StatusIcon = TrendingUp;
   } else if (balance < -0.01) {
     cardClass = 'owing-card--red';
-    statusText = 'You owe money to the pool';
-    statusColor = '#ef4444';
+    statusText = 'You owe money to the group';
+    statusColor = '#EF4444';
     StatusIcon = TrendingDown;
   }
+
+  const handleOpenSettle = (payeeMember, owedAmt) => {
+    setSettleModalConfig({
+      isOpen: true,
+      payee: payeeMember,
+      owedAmount: Math.abs(owedAmt),
+    });
+  };
+
+  const handleSettlementSuccess = (newTxn) => {
+    if (onSettlementCreated) {
+      onSettlementCreated(newTxn);
+    }
+  };
 
   return (
     <div className={`glass-card owing-card ${cardClass}`} id="owing-logic-card">
       <div className="owing-card__header">
         <h3 className="owing-card__title">Split & Owing Status</h3>
-        <div className="owing-card__icon" style={{ backgroundColor: `${statusColor}20`, color: statusColor }}>
+        <div className="owing-card__icon" style={{ backgroundColor: `${statusColor}1A`, color: statusColor }}>
           <StatusIcon size={20} />
         </div>
       </div>
@@ -164,24 +222,24 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
         <div className="owing-status" style={{ color: statusColor }}>
           {statusText}
         </div>
-        <div className="owing-balance-value" style={{ color: balance >= 0 ? '#10b981' : '#ef4444' }}>
-          {balance >= 0 ? '+' : '−'}
+        <div className="owing-balance-value" style={{ color: balance >= 0 ? '#22C55E' : '#EF4444' }}>
+          {balance >= 0 ? '+' : ''}
           {formatCurrency(balance)}
         </div>
 
         <div className="owing-details">
           <div className="owing-detail-row">
-            <span className="owing-detail-label">Your Total Paid</span>
+            <span className="owing-detail-label">Total Paid</span>
             <span className="owing-detail-value">{formatCurrency(totalPaid)}</span>
           </div>
           <div className="owing-detail-row">
-            <span className="owing-detail-label">Your Total Share</span>
+            <span className="owing-detail-label">Your Share</span>
             <span className="owing-detail-value">{formatCurrency(totalOwed)}</span>
           </div>
         </div>
 
         {activeBalances.length > 0 && (
-          <div className="owing-p2p-breakdown" style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-glass)' }}>
+          <div className="owing-p2p-breakdown" style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
             <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
               Individual Balances
             </h4>
@@ -196,20 +254,50 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
                     justifyContent: 'space-between',
                     fontSize: '0.85rem',
                     padding: '0.5rem 0.75rem',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-glass)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-color)',
                     borderRadius: '8px',
                     color: 'var(--text-secondary)'
                   }}
+                  id={`owing-row-${member._id || member.id}`}
                 >
                   {type === 'owes_you' ? (
                     <span>
-                      <strong style={{ color: '#ffffff' }}>{member.name}</strong> owes you: <strong style={{ color: '#10b981' }}>{formatRupee(amount)}</strong>
+                      <strong style={{ color: 'var(--text-primary)' }}>{member.name}</strong> owes you: <strong style={{ color: '#22C55E' }}>{formatRupee(amount)}</strong>
                     </span>
                   ) : (
-                    <span>
-                      You owe <strong style={{ color: '#ffffff' }}>{member.name}</strong>: <strong style={{ color: '#ef4444' }}>{formatRupee(amount)}</strong>
-                    </span>
+                    <>
+                      <span>
+                        You owe <strong style={{ color: 'var(--text-primary)' }}>{member.name}</strong>: <strong style={{ color: '#EF4444' }}>{formatRupee(amount)}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSettle(member, amount)}
+                        style={{
+                          background: '#22C55E',
+                          border: 'none',
+                          color: '#FFFFFF',
+                          padding: '0.3rem 0.75rem',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = '#16A34A';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = '#22C55E';
+                        }}
+                        id={`settle-btn-${member._id || member.id}`}
+                      >
+                        <span>Pay</span>
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
@@ -217,6 +305,16 @@ export default function OwingLogicCard({ transactions = [], members = [], curren
           </div>
         )}
       </div>
+
+      <SettleModal
+        isOpen={settleModalConfig.isOpen}
+        payee={settleModalConfig.payee}
+        owedAmount={settleModalConfig.owedAmount}
+        groupId={selectedGroup?.code || ''}
+        groupName={selectedGroup?.name || ''}
+        onSettled={handleSettlementSuccess}
+        onClose={() => setSettleModalConfig({ isOpen: false, payee: null, owedAmount: 0 })}
+      />
     </div>
   );
 }

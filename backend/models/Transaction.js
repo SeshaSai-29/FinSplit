@@ -43,6 +43,9 @@ const TransactionSchema = new mongoose.Schema({
     amount: {
       type: Number,
       required: true
+    },
+    shares: {
+      type: Number
     }
   }]
 }, {

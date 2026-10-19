@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, LogIn, Copy, Check, Users, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, LogIn, Copy, Check, Users, AlertCircle, Loader2, IndianRupee, Pencil } from 'lucide-react';
+import ManageGroupBudgetModal from './ManageGroupBudgetModal';
 
 export default function Groups({ user, onUserUpdate }) {
   const [groups, setGroups] = useState([]);
@@ -14,6 +15,7 @@ export default function Groups({ user, onUserUpdate }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copiedCode, setCopiedCode] = useState('');
+  const [selectedGroupForBudget, setSelectedGroupForBudget] = useState(null);
 
   // Fetch groups on mount
   const fetchGroups = async () => {
@@ -97,6 +99,7 @@ export default function Groups({ user, onUserUpdate }) {
       setSuccess(`Group "${data.group.name}" created successfully with code: ${data.group.code}`);
       setCreateName('');
       setCreateBudget('');
+      try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
       
       // Refresh list
       await fetchGroups();
@@ -140,6 +143,7 @@ export default function Groups({ user, onUserUpdate }) {
 
       setSuccess(`Successfully joined group "${data.group.name}"!`);
       setJoinCode('');
+      try { localStorage.setItem('home_cache_dirty', 'true'); window.dispatchEvent(new Event('finsplit_data_changed')); } catch (e) {}
 
       // Refresh list
       await fetchGroups();
@@ -177,7 +181,7 @@ export default function Groups({ user, onUserUpdate }) {
         {/* LEFT COLUMN: ACTIVE GROUPS */}
         <div className="glass-card group-list-card">
           <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-            <Users size={22} style={{ color: '#06b6d4' }} />
+            <Users size={22} style={{ color: 'var(--brand-primary)' }} />
             <span>Your Connected Groups</span>
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
@@ -186,7 +190,7 @@ export default function Groups({ user, onUserUpdate }) {
 
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem 0' }}>
-              <Loader2 size={36} className="animate-spin" style={{ color: '#06b6d4', animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={36} className="animate-spin" style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
             </div>
           ) : groups.length === 0 ? (
             <div className="empty-state">
@@ -198,26 +202,67 @@ export default function Groups({ user, onUserUpdate }) {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {groups.map((group) => (
-                <div key={group.code} className="group-item">
-                  <div className="group-info">
-                    <h4>{group.name}</h4>
-                    <p>{group.members.length} member{group.members.length > 1 ? 's' : ''}</p>
+              {groups.map((group) => {
+                const currentUserId = user?.id || user?._id;
+                const isOwner = group.createdBy === currentUserId;
+                return (
+                  <div key={group.code} className="group-item" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                      <div className="group-info">
+                        <h4>{group.name}</h4>
+                        <p>{group.members.length} member{group.members.length > 1 ? 's' : ''} {isOwner && '• Owner'}</p>
+                      </div>
+                      <div 
+                        className="code-display" 
+                        onClick={() => handleCopyCode(group.code)}
+                        title="Click to copy code"
+                      >
+                        <span>{group.code}</span>
+                        {copiedCode === group.code ? (
+                          <Check size={14} style={{ color: '#22C55E' }} />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)', fontSize: '0.82rem' }}>
+                      <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <IndianRupee size={13} style={{ color: 'var(--brand-primary)' }} />
+                        Budget:{' '}
+                        <strong style={{ color: group.budget > 0 ? 'var(--brand-primary)' : 'var(--text-muted)' }}>
+                          {group.budget > 0 ? `₹${group.budget.toLocaleString('en-IN')}` : 'None'}
+                        </strong>
+                      </span>
+
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGroupForBudget(group)}
+                          style={{
+                            background: 'rgba(59, 130, 246, 0.12)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            color: 'var(--brand-primary)',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '5px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s'
+                          }}
+                          title="Manage Group Budget"
+                        >
+                          <Pencil size={11} />
+                          <span>{group.budget > 0 ? 'Edit' : 'Set'}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div 
-                    className="code-display" 
-                    onClick={() => handleCopyCode(group.code)}
-                    title="Click to copy code"
-                  >
-                    <span>{group.code}</span>
-                    {copiedCode === group.code ? (
-                      <Check size={14} style={{ color: '#10b981' }} />
-                    ) : (
-                      <Copy size={14} />
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -227,10 +272,10 @@ export default function Groups({ user, onUserUpdate }) {
           {/* CREATE GROUP CARD */}
           <div className="glass-card" style={{ padding: '2rem' }}>
             <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-              <Plus size={20} style={{ color: '#8b5cf6' }} />
+              <Plus size={20} style={{ color: 'var(--brand-primary)' }} />
               <span>Create New Group</span>
             </h2>
-            <form onSubmit={handleCreateGroup}>
+            <form onSubmit={handleCreateGroup} autoComplete="off">
               <div className="form-group">
                 <label className="form-label" htmlFor="groupName">Group Name</label>
                 <div className="input-wrapper" style={{ display: 'block' }}>
@@ -242,6 +287,7 @@ export default function Groups({ user, onUserUpdate }) {
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     style={{ paddingLeft: '1rem' }}
+                    autoComplete="off"
                     required
                   />
                 </div>
@@ -259,6 +305,7 @@ export default function Groups({ user, onUserUpdate }) {
                     value={createBudget}
                     onChange={(e) => setCreateBudget(e.target.value)}
                     style={{ paddingLeft: '1rem' }}
+                    autoComplete="off"
                   />
                 </div>
               </div>
@@ -285,51 +332,72 @@ export default function Groups({ user, onUserUpdate }) {
           </div>
 
           {/* JOIN GROUP CARD */}
-          <div className="glass-card" style={{ padding: '2rem' }}>
-            <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-              <LogIn size={20} style={{ color: '#22d3ee' }} />
-              <span>Join Existing Group</span>
-            </h2>
-            <form onSubmit={handleJoinGroup}>
-              <div className="form-group">
-                <label className="form-label" htmlFor="joinCode">6-Character Invitation Code</label>
-                <div className="input-wrapper" style={{ display: 'block' }}>
-                  <input
-                    id="joinCode"
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. AX7B99"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value)}
-                    maxLength={6}
-                    style={{ paddingLeft: '1rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}
-                    required
-                  />
+          <div className="glass-card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                <LogIn size={20} style={{ color: 'var(--brand-primary)' }} />
+                <span>Join Existing Group</span>
+              </h2>
+              <form onSubmit={handleJoinGroup} autoComplete="off">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="joinCode">6-Character Invitation Code</label>
+                  <div className="input-wrapper" style={{ display: 'block' }}>
+                    <input
+                      id="joinCode"
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. AX7B99"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      maxLength={6}
+                      style={{ paddingLeft: '1rem', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, fontSize: '1.05rem' }}
+                      autoComplete="off"
+                      required
+                    />
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.4rem', marginBottom: 0 }}>
+                    Enter the unique 6-character invite code shared by the group owner.
+                  </p>
                 </div>
-              </div>
 
-              <button 
-                type="submit" 
-                className="btn-primary" 
-                style={{ width: '100%', background: 'var(--secondary-glow)' }}
-                disabled={joinLoading}
-              >
-                {joinLoading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                    <span>Joining Group...</span>
-                  </>
-                ) : (
-                  <>
-                    <LogIn size={18} />
-                    <span>Join Group</span>
-                  </>
-                )}
-              </button>
-            </form>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  style={{ width: '100%', marginTop: '0.5rem' }}
+                  disabled={joinLoading}
+                  id="join-group-submit-btn"
+                >
+                  {joinLoading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Joining Group...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn size={18} />
+                      <span>Join Group</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
+
+      {selectedGroupForBudget && (
+        <ManageGroupBudgetModal
+          isOpen={Boolean(selectedGroupForBudget)}
+          group={selectedGroupForBudget}
+          onClose={() => setSelectedGroupForBudget(null)}
+          onBudgetUpdated={(updatedGroup, message) => {
+            setGroups((prev) => prev.map((g) => (g.code === updatedGroup.code ? updatedGroup : g)));
+            setSuccess(message || 'Budget updated successfully');
+            setTimeout(() => setSuccess(''), 4000);
+            fetchGroups();
+          }}
+        />
+      )}
       
       <style>{`
         @keyframes spin {
