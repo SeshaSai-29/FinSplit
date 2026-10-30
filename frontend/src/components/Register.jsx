@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { getApiUrl } from '../utils/api.js';
+import { ensureServerReady, preWarmServer } from '../utils/serverHealth.js';
 
 export default function Register({ onRegisterSuccess }) {
   const [name, setName] = useState('');
@@ -13,6 +14,9 @@ export default function Register({ onRegisterSuccess }) {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Silently pre-warm server in background while user fills registration
+    preWarmServer();
+
     const params = new URLSearchParams(window.location.search);
     const urlError = params.get('error');
     if (urlError) {
@@ -20,9 +24,15 @@ export default function Register({ onRegisterSuccess }) {
     }
   }, []);
 
-  const handleGoogleSignIn = () => {
-    // Redirects to backend OAuth route
-    window.location.href = getApiUrl('/api/auth/google');
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    const isReady = await ensureServerReady();
+    setLoading(false);
+
+    if (isReady) {
+      // Redirects to backend OAuth route
+      window.location.href = getApiUrl('/api/auth/google');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -45,6 +55,13 @@ export default function Register({ onRegisterSuccess }) {
     }
 
     setLoading(true);
+
+    // Verify backend server is healthy/awake before registration
+    const isReady = await ensureServerReady();
+    if (!isReady) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/auth/register', {

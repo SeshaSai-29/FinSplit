@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { getApiUrl } from '../utils/api.js';
+import { ensureServerReady, preWarmServer } from '../utils/serverHealth.js';
 
 export default function Login({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
@@ -11,6 +12,9 @@ export default function Login({ onLoginSuccess }) {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Silently wake up backend in background while user enters credentials
+    preWarmServer();
+
     const params = new URLSearchParams(window.location.search);
     const urlError = params.get('error');
     if (urlError) {
@@ -18,9 +22,15 @@ export default function Login({ onLoginSuccess }) {
     }
   }, []);
 
-  const handleGoogleSignIn = () => {
-    // Redirects to backend OAuth route
-    window.location.href = getApiUrl('/api/auth/google');
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    const isReady = await ensureServerReady();
+    setLoading(false);
+
+    if (isReady) {
+      // Redirects to backend OAuth route
+      window.location.href = getApiUrl('/api/auth/google');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -33,6 +43,13 @@ export default function Login({ onLoginSuccess }) {
     }
 
     setLoading(true);
+
+    // Verify backend server is healthy/awake before dispatching login request
+    const isReady = await ensureServerReady();
+    if (!isReady) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/auth/login', {

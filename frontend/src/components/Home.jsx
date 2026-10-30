@@ -9,9 +9,11 @@ import {
   Receipt, 
   Clock, 
   Loader2, 
-  ChevronRight 
+  ChevronRight,
+  RefreshCw 
 } from 'lucide-react';
 import TransactionDetailModal from './TransactionDetailModal';
+import { ensureServerReady, preWarmServer } from '../utils/serverHealth.js';
 
 export default function Home({ user }) {
   const navigate = useNavigate();
@@ -91,6 +93,15 @@ export default function Home({ user }) {
       const token = localStorage.getItem('token');
       if (!token) return;
 
+      setLoading(true);
+
+      // Verify backend server is healthy/awake before fetching dashboard metrics
+      const isReady = await ensureServerReady();
+      if (!isReady) {
+        setLoading(false);
+        return;
+      }
+
       const [txnRes, groupsRes] = await Promise.all([
         fetch('/api/transactions', {
           headers: { Authorization: `Bearer ${token}` }
@@ -157,6 +168,9 @@ export default function Home({ user }) {
   }, [cacheKey, calculateGroupNetBalance]);
 
   useEffect(() => {
+    // Proactively pre-warm server in background
+    preWarmServer();
+
     const isDirty = localStorage.getItem('home_cache_dirty') === 'true';
     const hasCache = Boolean(initialCache);
 
@@ -216,9 +230,32 @@ export default function Home({ user }) {
 
   return (
     <div className="page-container">
-      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
-        <h1 className="page-title">Welcome back, {user?.name}!</h1>
-        <p className="page-subtitle">Here is a quick overview of your personal finances and group balances.</p>
+      <div className="page-header" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1 className="page-title">Welcome back, {user?.name}!</h1>
+          <p className="page-subtitle">Here is a quick overview of your personal finances and group balances.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => fetchAndCalculateDashboard()}
+          disabled={loading}
+          className="btn-secondary"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            padding: '0.45rem 0.9rem',
+            fontSize: '0.82rem',
+            borderRadius: '8px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.7 : 1
+          }}
+          title="Sync fresh data from server"
+          id="home-sync-data-btn"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <span>{loading ? 'Syncing...' : 'Sync Data'}</span>
+        </button>
       </div>
 
       {/* Top 4 Key Metric Cards */}

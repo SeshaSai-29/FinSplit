@@ -6,6 +6,7 @@ dist/
 .env.*
 !.env.example
 Finsplit.txt
+codebase_summary.md
 
 *.log
 npm-debug.log*

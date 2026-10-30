@@ -12,6 +12,8 @@ import Navbar from './components/Navbar';
 import Profile from './pages/Profile';
 import Features from './pages/Features';
 import OAuthCallback from './pages/OAuthCallback';
+import ServerWarmupModal from './components/ServerWarmupModal';
+import { ensureServerReady } from './utils/serverHealth.js';
 import './App.css';
 
 export default function App() {
@@ -38,6 +40,13 @@ export default function App() {
       }
 
       try {
+        // Ensure server is awake before checking profile if user has token
+        const isReady = await ensureServerReady();
+        if (!isReady) {
+          setLoading(false);
+          return;
+        }
+
         const response = await fetch('/api/auth/me', {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -72,29 +81,34 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'var(--bg-deep)',
-        gap: '1rem'
-      }}>
-        <Loader2 size={48} style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
-        <p style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-heading)', fontSize: '0.95rem' }}>Loading FinSplit Workspace...</p>
-        <style>{`
-          @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
+      <>
+        <ServerWarmupModal />
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          backgroundColor: 'var(--bg-deep)',
+          gap: '1rem'
+        }}>
+          <Loader2 size={48} style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
+          <p style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-heading)', fontSize: '0.95rem' }}>Loading FinSplit Workspace...</p>
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </>
     );
   }
 
   return (
-    <Router>
+    <>
+      <ServerWarmupModal />
+      <Router>
       <Routes>
         {/* PUBLIC & AUTH ROUTES */}
         <Route 
@@ -227,5 +241,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </Router>
+    </>
   );
 }
