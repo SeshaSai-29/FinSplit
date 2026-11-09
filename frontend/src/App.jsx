@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import Login from './components/Login';
-import Register from './components/Register';
-import Home from './components/Home';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Home from './pages/Home';
 import PersonalDashboard from './pages/PersonalDashboard';
 import Analytics from './pages/Analytics';
 import GroupDashboard from './pages/GroupDashboard';
-import Groups from './components/Groups';
+import Groups from './pages/Groups';
 import Navbar from './components/Navbar';
 import Profile from './pages/Profile';
 import Features from './pages/Features';

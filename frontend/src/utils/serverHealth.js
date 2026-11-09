@@ -2,7 +2,7 @@
  * FinSplit Server Health Manager
  * Handles cold-start detection with minimal requests to avoid 429 errors.
  *
- * Strategy:
+ * Plan:
  *  1. Send one health ping (5s timeout).
  *  2. If it fails, show loading and wait 1 minute before retrying.
  *  3. If the retry also fails, wait another 1 minute and try once more.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, LogIn, Copy, Check, Users, AlertCircle, Loader2, IndianRupee, Pencil } from 'lucide-react';
-import ManageGroupBudgetModal from './ManageGroupBudgetModal';
+import ManageGroupBudgetModal from '../components/ManageGroupBudgetModal';
 
 export default function Groups({ user, onUserUpdate }) {
   const [groups, setGroups] = useState([]);

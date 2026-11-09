@@ -12,7 +12,7 @@ import {
   ChevronRight,
   RefreshCw 
 } from 'lucide-react';
-import TransactionDetailModal from './TransactionDetailModal';
+import TransactionDetailModal from '../components/TransactionDetailModal';
 import { ensureServerReady, preWarmServer } from '../utils/serverHealth.js';
 
 export default function Home({ user }) {
