@@ -1,25 +1,26 @@
 /**
- * FinSplit Server Health & Cold-Start Warmup Manager
- * Specifically coordinates Render.com free tier cold starts.
+ * FinSplit Server Health Manager
+ * Handles cold-start detection with minimal requests to avoid 429 errors.
+ *
+ * Strategy:
+ *  1. Send one health ping (5s timeout).
+ *  2. If it fails, show loading and wait 1 minute before retrying.
+ *  3. If the retry also fails, wait another 1 minute and try once more.
+ *  4. If still not healthy after ~2 minutes total, show error.
  */
 import { getApiUrl } from './api.js';
 
 let isHealthyCached = false;
 let lastHealthyTime = 0;
-const HEALTH_CACHE_TTL = 3 * 60 * 1000; // 3 minutes cache
+const HEALTH_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 let currentCheckPromise = null;
 const listeners = new Set();
 
 let currentState = {
   status: 'idle', // 'idle' | 'checking' | 'ready' | 'error'
-  elapsedSeconds: 0,
-  maxSeconds: 60,
-  message: '',
-  retryFn: null
+  message: ''
 };
-
-export const getServerHealthState = () => currentState;
 
 export const subscribeServerHealth = (callback) => {
   listeners.add(callback);
@@ -29,140 +30,106 @@ export const subscribeServerHealth = (callback) => {
 
 const notify = (newState) => {
   currentState = { ...currentState, ...newState };
-  listeners.forEach((listener) => {
-    try {
-      listener(currentState);
-    } catch (e) {
-      console.error('Health listener error:', e);
-    }
+  listeners.forEach((fn) => {
+    try { fn(currentState); } catch (_) { /* ignore */ }
   });
 };
 
 /**
- * Single non-blocking ping to /api/health
+ * Single ping to /api/health with a timeout
  */
-export const pingHealthOnce = async (timeoutMs = 4000) => {
+const pingHealth = async (timeoutMs = 5000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const healthUrl = getApiUrl('/api/health');
-    const response = await fetch(healthUrl, {
+    const res = await fetch(getApiUrl('/api/health'), {
       method: 'GET',
       cache: 'no-store',
       signal: controller.signal
     });
-
     clearTimeout(timer);
-    if (response.ok) {
+    if (res.ok) {
       isHealthyCached = true;
       lastHealthyTime = Date.now();
       return true;
     }
     return false;
-  } catch (err) {
+  } catch {
     clearTimeout(timer);
     return false;
   }
 };
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Silently pre-warm server in background without blocking the UI
+ * Silently pre-warm server in background (single ping, no UI)
  */
 export const preWarmServer = async () => {
-  // If known to be recently healthy, skip pre-warm
-  if (isHealthyCached && Date.now() - lastHealthyTime < HEALTH_CACHE_TTL) {
-    return;
-  }
-
-  try {
-    await pingHealthOnce(6000);
-  } catch (err) {
-    // Ignore silent pre-warm error
-  }
+  if (isHealthyCached && Date.now() - lastHealthyTime < HEALTH_CACHE_TTL) return;
+  try { await pingHealth(6000); } catch { /* ignore */ }
 };
 
 /**
- * Ensure backend is healthy before executing critical action (login, register, OAuth, etc.)
- * Shows modal if cold start takes more than 1.5 seconds.
- * Times out after 60 seconds with an error message.
+ * Ensure backend is healthy before proceeding.
+ *
+ * Flow:
+ *  - Quick probe (2s). If healthy → return immediately, no modal.
+ *  - If not healthy → show loading modal, wait 1 min, retry.
+ *  - If still not healthy → wait 1 more min, retry.
+ *  - If still not healthy after 2 min total → show error.
  */
-export const ensureServerReady = async ({ maxWaitMs = 60000, force = false } = {}) => {
-  // If cached and still valid, resolve immediately
+export const ensureServerReady = async ({ force = false } = {}) => {
   if (!force && isHealthyCached && Date.now() - lastHealthyTime < HEALTH_CACHE_TTL) {
     return true;
   }
 
-  // Deduplicate ongoing checks
-  if (currentCheckPromise) {
-    return currentCheckPromise;
-  }
+  // Deduplicate concurrent calls
+  if (currentCheckPromise) return currentCheckPromise;
 
   currentCheckPromise = (async () => {
-    // 1. First quick probe (up to 1500ms). If server is already awake, don't even flash modal!
-    const quickProbeSuccess = await pingHealthOnce(1500);
-    if (quickProbeSuccess) {
+    // Quick probe — if server is already awake, skip everything
+    if (await pingHealth(2000)) {
       currentCheckPromise = null;
       return true;
     }
 
-    // 2. Server is sleeping or cold. Activate warmup screen.
-    const startTime = Date.now();
-    const maxSeconds = Math.round(maxWaitMs / 1000);
-
-    notify({
-      status: 'checking',
-      elapsedSeconds: 0,
-      maxSeconds,
-      message: "Render free tier instance is spinning up. Waking up the server...",
-      retryFn: () => ensureServerReady({ maxWaitMs, force: true })
-    });
-
-    // Start timer ticker
-    const ticker = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      if (currentState.status === 'checking') {
-        notify({ elapsedSeconds: Math.min(elapsed, maxSeconds) });
-      }
-    }, 500);
+    // Server is cold — show loading screen
+    notify({ status: 'checking', message: '' });
 
     try {
-      while (Date.now() - startTime < maxWaitMs) {
-        const isHealthy = await pingHealthOnce(3500);
-
-        if (isHealthy) {
-          clearInterval(ticker);
-          notify({
-            status: 'ready',
-            message: 'Server is online and ready!'
-          });
-
-          // Short visual confirmation before closing
-          await new Promise((r) => setTimeout(r, 600));
-          notify({ status: 'idle' });
-          currentCheckPromise = null;
-          return true;
-        }
-
-        // Wait 2 seconds before next ping
-        await new Promise((r) => setTimeout(r, 2000));
+      // Attempt 1: wait 1 minute then ping
+      await wait(60000);
+      if (await pingHealth(5000)) {
+        notify({ status: 'ready' });
+        await wait(500);
+        notify({ status: 'idle' });
+        currentCheckPromise = null;
+        return true;
       }
 
-      // If loop exited due to timeout (1 minute reached)
-      clearInterval(ticker);
+      // Attempt 2: wait another 1 minute then ping
+      await wait(60000);
+      if (await pingHealth(5000)) {
+        notify({ status: 'ready' });
+        await wait(500);
+        notify({ status: 'idle' });
+        currentCheckPromise = null;
+        return true;
+      }
+
+      // Both attempts failed
       notify({
         status: 'error',
-        elapsedSeconds: maxSeconds,
-        message: 'The server is experiencing some issues or taking longer than expected to wake up. Please try again later.'
+        message: 'Something went wrong. Please try again later.'
       });
-
       currentCheckPromise = null;
       return false;
-    } catch (err) {
-      clearInterval(ticker);
+    } catch {
       notify({
         status: 'error',
-        message: 'Failed to verify server health. Please check your internet connection and try again.'
+        message: 'Something went wrong. Please try again later.'
       });
       currentCheckPromise = null;
       return false;
