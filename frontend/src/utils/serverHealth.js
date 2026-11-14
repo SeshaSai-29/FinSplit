@@ -8,9 +8,6 @@
  *  3. If the retry also fails, wait another 1 minute and try once more.
  *  4. If still not healthy after ~2 minutes total, show error.
  *
- * NOTE: Health pings bypass the Vercel proxy and go directly to Render to avoid
- * Cloudflare 429 bot-challenges on server-to-server requests. Set VITE_RENDER_HEALTH_URL
- * in Vercel environment variables to point to your Render backend's /api/health endpoint.
  */
 
 // Read from Vite env var — set VITE_RENDER_HEALTH_URL in Vercel project settings.
