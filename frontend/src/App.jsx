@@ -79,18 +79,20 @@ export default function App() {
     setUser(null);
   };
 
-  if (loading) {
-    return (
-      <>
-        <ServerWarmupModal />
+  return (
+    <>
+      <ServerWarmupModal />
+      {loading && (
         <div style={{
+          position: 'fixed',
+          inset: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: '100vh',
           backgroundColor: 'var(--bg-deep)',
-          gap: '1rem'
+          gap: '1rem',
+          zIndex: 9998
         }}>
           <Loader2 size={48} style={{ color: 'var(--brand-primary)', animation: 'spin 1s linear infinite' }} />
           <p style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-heading)', fontSize: '0.95rem' }}>Loading FinSplit Workspace...</p>
@@ -101,13 +103,8 @@ export default function App() {
             }
           `}</style>
         </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <ServerWarmupModal />
+      )}
+      {!loading && (
       <Router>
       <Routes>
         {/* PUBLIC & AUTH ROUTES */}
@@ -241,6 +238,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </Router>
+      )}
     </>
   );
 }

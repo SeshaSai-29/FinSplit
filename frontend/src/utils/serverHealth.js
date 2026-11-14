@@ -7,8 +7,14 @@
  *  2. If it fails, show loading and wait 1 minute before retrying.
  *  3. If the retry also fails, wait another 1 minute and try once more.
  *  4. If still not healthy after ~2 minutes total, show error.
+ *
+ * NOTE: Health pings bypass the Vercel proxy and go directly to Render to avoid
+ * Cloudflare 429 bot-challenges on server-to-server requests. Set VITE_RENDER_HEALTH_URL
+ * in Vercel environment variables to point to your Render backend's /api/health endpoint.
  */
-import { getApiUrl } from './api.js';
+
+// Read from Vite env var — set VITE_RENDER_HEALTH_URL in Vercel project settings.
+const RENDER_HEALTH_URL = import.meta.env.VITE_RENDER_HEALTH_URL || '';
 
 let isHealthyCached = false;
 let lastHealthyTime = 0;
@@ -35,15 +41,19 @@ const notify = (newState) => {
   });
 };
 
-/**
- * Single ping to /api/health with a timeout
- */
+
 const pingHealth = async (timeoutMs = 5000) => {
+  // If env var is not configured, treat as healthy to avoid blocking the app
+  if (!RENDER_HEALTH_URL) {
+    console.warn('[serverHealth] VITE_RENDER_HEALTH_URL is not set — skipping health check.');
+    return true;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(getApiUrl('/api/health'), {
+    const res = await fetch(RENDER_HEALTH_URL, {
       method: 'GET',
       cache: 'no-store',
       signal: controller.signal
@@ -102,8 +112,6 @@ export const ensureServerReady = async ({ force = false } = {}) => {
       // Attempt 1: wait 1 minute then ping
       await wait(60000);
       if (await pingHealth(5000)) {
-        notify({ status: 'ready' });
-        await wait(500);
         notify({ status: 'idle' });
         currentCheckPromise = null;
         return true;
@@ -112,8 +120,6 @@ export const ensureServerReady = async ({ force = false } = {}) => {
       // Attempt 2: wait another 1 minute then ping
       await wait(60000);
       if (await pingHealth(5000)) {
-        notify({ status: 'ready' });
-        await wait(500);
         notify({ status: 'idle' });
         currentCheckPromise = null;
         return true;
